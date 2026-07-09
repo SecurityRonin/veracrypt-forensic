@@ -1,0 +1,18 @@
+[package]
+name         = "veracrypt-forensic"
+description   = "VeraCrypt/TrueCrypt volume anomaly auditor — flavor, PRF, cipher, and hidden-volume observations."
+version      = { workspace = true }
+edition      = { workspace = true }
+rust-version = { workspace = true }
+license      = { workspace = true }
+authors      = { workspace = true }
+repository   = { workspace = true }
+readme       = "../README.md"
+keywords     = ["veracrypt", "truecrypt", "forensics", "dfir", "encryption"]
+categories   = ["cryptography", "filesystem"]
+
+[dependencies]
+veracrypt = { workspace = true }
+
+[lints]
+workspace = true
