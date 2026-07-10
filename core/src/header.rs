@@ -20,6 +20,8 @@ pub const HEADER_LEN: usize = 448;
 pub const VOLUME_HEADER_LEN: usize = SALT_LEN + HEADER_LEN;
 /// Offset of the standard-volume header in the container.
 pub const NORMAL_HEADER_OFFSET: u64 = 0;
+/// Offset of the hidden-volume header in the container (second 64 KiB).
+pub const HIDDEN_HEADER_OFFSET: u64 = 65_536;
 /// The VeraCrypt magic at decrypted offset 0.
 pub const MAGIC_VERA: &[u8; 4] = b"VERA";
 /// The TrueCrypt magic at decrypted offset 0.

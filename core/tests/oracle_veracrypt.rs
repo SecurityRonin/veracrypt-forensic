@@ -72,6 +72,37 @@ fn tier1_vc_sha512_xts_aes_matches_cryptsetup() {
 }
 
 #[test]
+fn tier1_hidden_volume_matches_cryptsetup() {
+    let Ok(path) = std::env::var("VC_HIDDEN_ORACLE") else {
+        eprintln!("VC_HIDDEN_ORACLE unset — skipping Tier-1 hidden-volume oracle");
+        return;
+    };
+    let file = File::open(&path).expect("open hidden vc image");
+    let mut vol = VeraVolume::unlock_hidden_with_password(file, b"bbbbbbbbbbbb")
+        .expect("unlock hidden volume");
+    // Hidden data area begins at byte 165888 (its own encrypted_area_start).
+    assert_eq!(vol.info().encrypted_area_start, 165_888);
+
+    let cases: [(u64, &str); 2] = [
+        (
+            0,
+            "79a162bda41b98338009c880004ce44d3d84c2bf412f76271fea08279bffed8e",
+        ),
+        (
+            2,
+            "6242cb7cb043b219a77ffa2bd0aedab6735389bbbe8b3b2e88410cf5f74247a5",
+        ),
+    ];
+    for (lba, want) in cases {
+        let mut buf = [0u8; 512];
+        vol.read_at(lba * 512, &mut buf).expect("read_at");
+        let got = sha256_hex(&buf);
+        println!("hidden sector {lba}: {got}");
+        assert_eq!(got, want, "hidden sector {lba} does not match cryptsetup");
+    }
+}
+
+#[test]
 fn wrong_password_fails() {
     let Ok(path) = std::env::var("VC_ORACLE") else {
         return;

@@ -6,7 +6,8 @@ use std::io::{Read, Seek, SeekFrom};
 use crate::crypto::{xts_decrypt, Cipher, Prf};
 use crate::error::{Result, VeraError};
 use crate::header::{
-    Flavor, VeraHeader, HEADER_LEN, NORMAL_HEADER_OFFSET, SALT_LEN, VOLUME_HEADER_LEN,
+    Flavor, VeraHeader, HEADER_LEN, HIDDEN_HEADER_OFFSET, NORMAL_HEADER_OFFSET, SALT_LEN,
+    VOLUME_HEADER_LEN,
 };
 
 /// VeraCrypt data-area encryption sector size (bytes).
@@ -42,7 +43,7 @@ impl VeraVolume {
         reader: R,
         password: &[u8],
     ) -> Result<DecryptedVolume<R>> {
-        Self::unlock_with_pim(reader, password, 0)
+        Self::unlock_at(reader, password, 0, NORMAL_HEADER_OFFSET)
     }
 
     /// Unlock with an explicit PIM (personal iterations multiplier; 0 = default).
@@ -50,19 +51,54 @@ impl VeraVolume {
     /// # Errors
     /// As [`Self::unlock_with_password`].
     pub fn unlock_with_pim<R: Read + Seek>(
-        mut reader: R,
+        reader: R,
         password: &[u8],
         pim: u32,
     ) -> Result<DecryptedVolume<R>> {
+        Self::unlock_at(reader, password, pim, NORMAL_HEADER_OFFSET)
+    }
+
+    /// Unlock the HIDDEN volume with `password` (its header is at 64 KiB). Used to
+    /// access — or prove the presence of — a deniable hidden volume.
+    ///
+    /// # Errors
+    /// As [`Self::unlock_with_password`].
+    pub fn unlock_hidden_with_password<R: Read + Seek>(
+        reader: R,
+        password: &[u8],
+    ) -> Result<DecryptedVolume<R>> {
+        Self::unlock_at(reader, password, 0, HIDDEN_HEADER_OFFSET)
+    }
+
+    /// Unlock the hidden volume with an explicit PIM.
+    ///
+    /// # Errors
+    /// As [`Self::unlock_with_password`].
+    pub fn unlock_hidden_with_pim<R: Read + Seek>(
+        reader: R,
+        password: &[u8],
+        pim: u32,
+    ) -> Result<DecryptedVolume<R>> {
+        Self::unlock_at(reader, password, pim, HIDDEN_HEADER_OFFSET)
+    }
+
+    /// Shared unlock: read the 512-byte volume header at `header_offset`, brute the
+    /// PRF x cipher, and build the decrypting reader.
+    fn unlock_at<R: Read + Seek>(
+        mut reader: R,
+        password: &[u8],
+        pim: u32,
+        header_offset: u64,
+    ) -> Result<DecryptedVolume<R>> {
         let total_size = reader.seek(SeekFrom::End(0))?;
-        if total_size < VOLUME_HEADER_LEN as u64 {
+        if total_size < header_offset + VOLUME_HEADER_LEN as u64 {
             return Err(VeraError::TooSmall {
                 got: total_size as usize,
             });
         }
 
         let mut hdr = [0u8; VOLUME_HEADER_LEN];
-        reader.seek(SeekFrom::Start(NORMAL_HEADER_OFFSET))?;
+        reader.seek(SeekFrom::Start(header_offset))?;
         read_fill(&mut reader, &mut hdr)?;
         let salt = &hdr[0..SALT_LEN];
         let header_ct = &hdr[SALT_LEN..VOLUME_HEADER_LEN];
