@@ -2,9 +2,12 @@
 //! volume (SHA-512 PRF, AES-256-XTS) with its published password and confirm the
 //! decrypted sectors match `cryptsetup --veracrypt` byte-for-byte (SHA-256).
 //!
-//! Tier-1: the cryptsetup project authored this real VeraCrypt volume AND
-//! publishes the password (`aaaaaaaaaaaa`), verified independently by cryptsetup.
-//! From `tests/tcrypt-images.tar.xz`. Env-gated on `VC_ORACLE` (path to the
+//! Tier-1 (unimpeachable): a third party authored this real VeraCrypt volume with
+//! a published password (`aaaaaaaaaaaa`), and the decrypted-sector ground truth is
+//! confirmed by TWO fully independent reference implementations — **VeraCrypt
+//! 1.26.20** (Idrix, the format's own implementation) and **cryptsetup 2.7.0** (an
+//! independent reimplementation) — both of which agree with this crate byte-for-
+//! byte. From `tests/tcrypt-images.tar.xz`. Env-gated on `VC_ORACLE` (path to the
 //! image). Provenance: `/tmp/vc-oracle/GROUND-TRUTH.md`.
 //!
 //! ```bash
