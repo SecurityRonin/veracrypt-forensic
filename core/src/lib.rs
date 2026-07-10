@@ -19,7 +19,15 @@
 //! volume with a published password (Tier-1); see `docs/validation.md`.
 
 #![forbid(unsafe_code)]
-#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
+#![cfg_attr(
+    test,
+    allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::trivially_copy_pass_by_ref,
+        clippy::seek_from_current
+    )
+)]
 
 mod crypto;
 mod error;

@@ -27,6 +27,38 @@ use veracrypt::VeraVolume;
 const PASSWORD: &[u8] = b"aaaaaaaaaaaa";
 
 #[test]
+fn tier1_serpent256_matches_cryptsetup() {
+    // Proves 256-bit VeraCrypt Serpent decrypts correctly (via serpent
+    // new_from_slice). Same plaintext as the AES oracle → same sector hashes.
+    let Ok(path) = std::env::var("VC_SERPENT_ORACLE") else {
+        eprintln!("VC_SERPENT_ORACLE unset — skipping Tier-1 Serpent oracle");
+        return;
+    };
+    let file = File::open(&path).expect("open serpent vc image");
+    let mut vol = VeraVolume::unlock_with_password(file, PASSWORD).expect("unlock serpent volume");
+    assert_eq!(vol.info().cipher.name(), "serpent", "must brute to serpent");
+    // vcserp.vc minted with the real veracrypt binary (Serpent-256, SHA-512),
+    // identical plaintext per sector → same hash; ground truth from veracrypt.
+    let cases: [(u64, &str); 2] = [
+        (
+            0,
+            "479ad71598de182171230acbe3322cdac3b9bb9f70894a7cc3e7b526be46693b",
+        ),
+        (
+            1,
+            "479ad71598de182171230acbe3322cdac3b9bb9f70894a7cc3e7b526be46693b",
+        ),
+    ];
+    for (lba, want) in cases {
+        let mut buf = [0u8; 512];
+        vol.read_at(lba * 512, &mut buf).expect("read_at");
+        let got = sha256_hex(&buf);
+        println!("serpent sector {lba}: {got}");
+        assert_eq!(got, want, "serpent sector {lba} does not match cryptsetup");
+    }
+}
+
+#[test]
 fn tier1_vc_sha512_xts_aes_matches_cryptsetup() {
     let Ok(path) = std::env::var("VC_ORACLE") else {
         eprintln!("VC_ORACLE unset — skipping Tier-1 VeraCrypt oracle");

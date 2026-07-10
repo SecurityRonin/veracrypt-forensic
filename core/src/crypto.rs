@@ -1,8 +1,9 @@
-//! VeraCrypt key derivation (PBKDF2 over five PRFs) and AES/Twofish XTS
+//! VeraCrypt key derivation (PBKDF2 over five PRFs) and AES/Serpent/Twofish XTS
 //! decryption. Every primitive is an audited RustCrypto crate.
 
 use aes::cipher::KeyInit;
 use aes::Aes256;
+use serpent::Serpent;
 use twofish::Twofish;
 use xts_mode::Xts128;
 
@@ -71,7 +72,7 @@ impl Prf {
         }
     }
 
-    /// Derive `out_len` bytes with PBKDF2-HMAC-<self>.
+    /// Derive `out_len` bytes with PBKDF2-HMAC using this PRF.
     pub fn derive(self, password: &[u8], salt: &[u8], iterations: u32, out_len: usize) -> Vec<u8> {
         let mut out = vec![0u8; out_len];
         let it = iterations.max(1);
@@ -92,13 +93,14 @@ impl Prf {
     }
 }
 
-/// A VeraCrypt data cipher (single-cipher; cascades and Serpent are future
-/// extensions — the RustCrypto `serpent` crate is 128-bit-key only, so 256-bit
-/// VeraCrypt Serpent needs a different implementation).
+/// A VeraCrypt data cipher (single-cipher; cipher cascades are a future
+/// extension). All are 256-bit keys in XTS mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Cipher {
     /// AES-256 (XTS).
     Aes,
+    /// Serpent-256 (XTS).
+    Serpent,
     /// Twofish-256 (XTS).
     Twofish,
 }
@@ -106,8 +108,8 @@ pub enum Cipher {
 impl Cipher {
     /// All single ciphers, in VeraCrypt's try order.
     #[must_use]
-    pub fn all() -> [Cipher; 2] {
-        [Cipher::Aes, Cipher::Twofish]
+    pub fn all() -> [Cipher; 3] {
+        [Cipher::Aes, Cipher::Serpent, Cipher::Twofish]
     }
 
     /// Human name.
@@ -115,6 +117,7 @@ impl Cipher {
     pub fn name(self) -> &'static str {
         match self {
             Cipher::Aes => "aes",
+            Cipher::Serpent => "serpent",
             Cipher::Twofish => "twofish",
         }
     }
@@ -151,6 +154,19 @@ pub fn xts_decrypt(
             unit_size,
             base_unit,
         ),
+        Cipher::Serpent => {
+            // The typed Serpent::new() is fixed to 16-byte keys, but new_from_slice
+            // accepts 16..=32 and uses the full 256-bit key schedule (VeraCrypt's).
+            // k1/k2 are exactly 32 bytes here (key.len()==64 checked above), and
+            // new_from_slice accepts 16..=32, so the InvalidLength arm is unreachable.
+            let c1 = Serpent::new_from_slice(k1).map_err(|_| VeraError::Crypto {
+                what: "serpent 256-bit key",
+            })?; // cov:unreachable: k1 is 32 bytes
+            let c2 = Serpent::new_from_slice(k2).map_err(|_| VeraError::Crypto {
+                what: "serpent 256-bit key",
+            })?; // cov:unreachable: k2 is 32 bytes
+            decrypt_units(&Xts128::new(c1, c2), buffer, unit_size, base_unit);
+        }
         Cipher::Twofish => decrypt_units(
             &Xts128::new(Twofish::new(k1.into()), Twofish::new(k2.into())),
             buffer,
@@ -186,7 +202,30 @@ mod tests {
         assert_eq!(Prf::Sha512.iterations_pim(10), 25_000);
         assert_eq!(Prf::Ripemd160.iterations_pim(10), 20_480);
         assert_eq!(Prf::all().len(), 5);
-        assert_eq!(Cipher::all().map(Cipher::name), ["aes", "twofish"]);
+        assert_eq!(
+            Cipher::all().map(Cipher::name),
+            ["aes", "serpent", "twofish"]
+        );
+    }
+
+    #[test]
+    fn every_prf_has_a_name_and_derives() {
+        // Names for the four non-SHA512 PRFs (SHA-512 is covered by the oracle).
+        assert_eq!(Prf::Sha256.name(), "sha256");
+        assert_eq!(Prf::Whirlpool.name(), "whirlpool");
+        assert_eq!(Prf::Streebog.name(), "streebog");
+        assert_eq!(Prf::Ripemd160.name(), "ripemd160");
+        // Each PRF derives the requested number of bytes (1 iteration for speed).
+        for prf in Prf::all() {
+            let k = prf.derive(b"password", b"salt", 1, 64);
+            assert_eq!(k.len(), 64, "prf {} derive length", prf.name());
+        }
+    }
+
+    #[test]
+    fn cipher_key_len_is_two_256bit_subkeys() {
+        assert_eq!(Cipher::Aes.key_len(), 64);
+        assert_eq!(Cipher::Twofish.key_len(), 64);
     }
 
     #[test]
@@ -213,6 +252,14 @@ mod tests {
             match cipher {
                 Cipher::Aes => encrypt_one(
                     &Xts128::new(Aes256::new(k1.into()), Aes256::new(k2.into())),
+                    &mut buf,
+                    256,
+                ),
+                Cipher::Serpent => encrypt_one(
+                    &Xts128::new(
+                        Serpent::new_from_slice(k1).unwrap(),
+                        Serpent::new_from_slice(k2).unwrap(),
+                    ),
                     &mut buf,
                     256,
                 ),

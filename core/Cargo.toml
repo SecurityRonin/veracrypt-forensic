@@ -17,6 +17,7 @@ name = "veracrypt"
 [dependencies]
 thiserror = { workspace = true }
 aes       = { workspace = true }
+serpent   = { workspace = true }
 twofish   = { workspace = true }
 xts-mode  = { workspace = true }
 sha2      = { workspace = true }

@@ -108,3 +108,70 @@ impl VeraHeader {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Build a well-formed decrypted header for `magic`, with the two CRC-32 fields
+    /// computed over the correct regions (the same construction VeraCrypt writes).
+    fn valid_header(magic: &[u8; 4]) -> [u8; HEADER_LEN] {
+        let mut dec = [0u8; HEADER_LEN];
+        dec[0..4].copy_from_slice(magic);
+        dec[4..6].copy_from_slice(&5u16.to_be_bytes()); // version 5
+        dec[28..36].copy_from_slice(&4096u64.to_be_bytes()); // hidden size
+        dec[36..44].copy_from_slice(&1_048_576u64.to_be_bytes()); // volume size
+        dec[44..52].copy_from_slice(&131_072u64.to_be_bytes()); // encrypted-area start
+        dec[52..60].copy_from_slice(&36_864u64.to_be_bytes()); // encrypted-area size
+        dec[64..68].copy_from_slice(&512u32.to_be_bytes()); // sector size
+        for (i, b) in dec[192..448].iter_mut().enumerate() {
+            *b = (i as u8) ^ 0x5a; // master-key material
+        }
+        let crc_mk = crc32fast::hash(&dec[192..448]);
+        dec[8..12].copy_from_slice(&crc_mk.to_be_bytes());
+        let crc_hdr = crc32fast::hash(&dec[0..188]);
+        dec[188..192].copy_from_slice(&crc_hdr.to_be_bytes());
+        dec
+    }
+
+    #[test]
+    fn validates_vera_and_true_magic() {
+        let v = VeraHeader::validate(&valid_header(MAGIC_VERA)).expect("VERA header");
+        assert_eq!(v.flavor, Flavor::VeraCrypt);
+        assert_eq!(v.version, 5);
+        assert_eq!(v.encrypted_area_start, 131_072);
+        assert_eq!(v.encrypted_area_size, 36_864);
+        assert_eq!(v.volume_size, 1_048_576);
+        assert_eq!(v.hidden_size, 4096);
+        assert_eq!(v.sector_size, 512);
+
+        let t = VeraHeader::validate(&valid_header(MAGIC_TRUE)).expect("TRUE header");
+        assert_eq!(t.flavor, Flavor::TrueCrypt);
+    }
+
+    #[test]
+    fn rejects_short_input() {
+        assert!(VeraHeader::validate(&[0u8; HEADER_LEN - 1]).is_none());
+    }
+
+    #[test]
+    fn rejects_bad_magic() {
+        let mut dec = valid_header(MAGIC_VERA);
+        dec[0] = b'X'; // corrupt magic (invalidates both CRC and signature)
+        assert!(VeraHeader::validate(&dec).is_none());
+    }
+
+    #[test]
+    fn rejects_master_key_crc_mismatch() {
+        let mut dec = valid_header(MAGIC_VERA);
+        dec[400] ^= 0xff; // flip a master-key byte without fixing crc@8
+        assert!(VeraHeader::validate(&dec).is_none());
+    }
+
+    #[test]
+    fn rejects_header_field_crc_mismatch() {
+        let mut dec = valid_header(MAGIC_VERA);
+        dec[64] ^= 0xff; // flip sector-size (in the crc@188 region) without fixing it
+        assert!(VeraHeader::validate(&dec).is_none());
+    }
+}

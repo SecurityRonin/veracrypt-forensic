@@ -193,7 +193,7 @@ impl<R: Read + Seek> DecryptedVolume<R> {
                 &mut ct,
                 DATA_SECTOR,
                 self.base_unit + u128::from(unit),
-            )?;
+            )?; // cov:unreachable: cipher+64-byte key came from a successful unlock
 
             let take = (DATA_SECTOR - within).min(buf.len() - done);
             buf[done..done + take].copy_from_slice(&ct[within..within + take]);
@@ -255,4 +255,221 @@ fn read_available<R: Read>(reader: &mut R, buf: &mut [u8]) -> Result<usize> {
         *b = 0;
     }
     Ok(filled)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{Cursor, Read as _, Seek as _, SeekFrom};
+
+    use aes::cipher::KeyInit;
+    use aes::Aes256;
+    use xts_mode::Xts128;
+
+    use super::*;
+    use crate::crypto::Prf;
+
+    const PASSWORD: &[u8] = b"correct horse";
+    const DATA_START: u64 = 512; // encrypted area begins right after the 512-byte header
+    const DATA_SECTORS: usize = 3;
+
+    /// AES-256-XTS encrypt (the inverse of `crypto::decrypt_units`) for fixtures.
+    fn xts_encrypt_aes(key64: &[u8; 64], buf: &mut [u8], unit_size: usize, base: u128) {
+        let (k1, k2) = key64.split_at(32);
+        let xts = Xts128::new(Aes256::new(k1.into()), Aes256::new(k2.into()));
+        for (u, chunk) in buf.chunks_mut(unit_size).enumerate() {
+            xts.encrypt_sector(chunk, (base + u as u128).to_le_bytes());
+        }
+    }
+
+    /// Assemble a synthetic AES-256-XTS VeraCrypt container in memory and return
+    /// `(container_bytes, plaintext_data_area)`. The header is a real VeraCrypt
+    /// header (VERA magic + both CRC-32s) XTS-encrypted under the SHA-512 header
+    /// key at PIM 1, so the crate's own brute recovers it. Correctness of the
+    /// crypto itself is proven by the Tier-1 oracle; this only drives the paths.
+    fn build_volume() -> (Vec<u8>, Vec<u8>) {
+        build_volume_with(true)
+    }
+
+    fn build_volume_with(declare_size: bool) -> (Vec<u8>, Vec<u8>) {
+        let salt = [0x11u8; SALT_LEN];
+        let master_key = [0x24u8; 64];
+
+        // Decrypted 448-byte header.
+        let mut dec = [0u8; HEADER_LEN];
+        dec[0..4].copy_from_slice(b"VERA");
+        dec[4..6].copy_from_slice(&5u16.to_be_bytes());
+        let data_size = (DATA_SECTORS * DATA_SECTOR) as u64;
+        dec[36..44].copy_from_slice(&(DATA_START + data_size).to_be_bytes()); // volume size
+        dec[44..52].copy_from_slice(&DATA_START.to_be_bytes()); // encrypted-area start
+                                                                // 0 = "size not declared" ⇒ reader falls back to total_size - data_offset.
+        let declared = if declare_size { data_size } else { 0 };
+        dec[52..60].copy_from_slice(&declared.to_be_bytes()); // encrypted-area size
+        dec[64..68].copy_from_slice(&512u32.to_be_bytes());
+        dec[192..256].copy_from_slice(&master_key); // master-key material
+        let crc_mk = crc32fast::hash(&dec[192..448]);
+        dec[8..12].copy_from_slice(&crc_mk.to_be_bytes());
+        let crc_hdr = crc32fast::hash(&dec[0..188]);
+        dec[188..192].copy_from_slice(&crc_hdr.to_be_bytes());
+
+        // Encrypt the header with the SHA-512 header key (PIM 1 = 16000 iterations).
+        let header_key = Prf::Sha512.derive(PASSWORD, &salt, Prf::Sha512.iterations_pim(1), 64);
+        let mut header_ct = dec.to_vec();
+        let hk: [u8; 64] = header_key.try_into().unwrap();
+        xts_encrypt_aes(&hk, &mut header_ct, HEADER_LEN, 0);
+
+        // Plaintext data area, then encrypt each sector at tweak base_unit + lba.
+        let mut plain = vec![0u8; DATA_SECTORS * DATA_SECTOR];
+        for (i, b) in plain.iter_mut().enumerate() {
+            *b = (i as u8).wrapping_mul(7) ^ 0xa5;
+        }
+        let base_unit = u128::from(DATA_START / DATA_SECTOR as u64);
+        let mut data_ct = plain.clone();
+        xts_encrypt_aes(&master_key, &mut data_ct, DATA_SECTOR, base_unit);
+
+        let mut container = Vec::new();
+        container.extend_from_slice(&salt);
+        container.extend_from_slice(&header_ct);
+        container.extend_from_slice(&data_ct);
+        (container, plain)
+    }
+
+    #[test]
+    fn hermetic_unlock_and_read_roundtrip() {
+        let (container, plain) = build_volume();
+        let mut vol = VeraVolume::unlock_with_pim(Cursor::new(container), PASSWORD, 1)
+            .expect("unlock synthetic volume");
+
+        assert_eq!(vol.info().prf.name(), "sha512");
+        assert_eq!(vol.info().cipher.name(), "aes");
+        assert_eq!(vol.info().flavor, Flavor::VeraCrypt);
+        assert_eq!(vol.info().version, 5);
+        assert_eq!(vol.info().encrypted_area_start, DATA_START);
+        assert_eq!(vol.master_key().len(), 64);
+        assert_eq!(vol.data_size(), plain.len() as u64);
+
+        // Sector-by-sector read_at.
+        for lba in 0..DATA_SECTORS as u64 {
+            let mut buf = [0u8; DATA_SECTOR];
+            vol.read_at(lba * DATA_SECTOR as u64, &mut buf).unwrap();
+            let want = &plain[(lba as usize) * DATA_SECTOR..(lba as usize + 1) * DATA_SECTOR];
+            assert_eq!(&buf[..], want, "sector {lba}");
+        }
+
+        // Unaligned read spanning a sector boundary.
+        let mut span = [0u8; 10];
+        vol.read_at(510, &mut span).unwrap();
+        assert_eq!(&span[..], &plain[510..520]);
+    }
+
+    #[test]
+    fn hermetic_read_and_seek_traits() {
+        let (container, plain) = build_volume();
+        let mut vol =
+            VeraVolume::unlock_with_pim(Cursor::new(container), PASSWORD, 1).expect("unlock");
+
+        // Read the whole data area via the Read impl.
+        let mut all = Vec::new();
+        vol.read_to_end(&mut all).unwrap();
+        assert_eq!(all, plain);
+        // At EOF the Read impl yields 0.
+        assert_eq!(vol.read(&mut [0u8; 16]).unwrap(), 0);
+
+        // Seek from End then Current, and reject a negative seek.
+        let pos = vol.seek(SeekFrom::End(-512)).unwrap();
+        assert_eq!(pos, (plain.len() - 512) as u64);
+        assert_eq!(vol.seek(SeekFrom::Current(0)).unwrap(), pos);
+        assert_eq!(vol.seek(SeekFrom::Start(0)).unwrap(), 0);
+        assert!(vol.seek(SeekFrom::Current(-1)).is_err());
+    }
+
+    #[test]
+    fn hidden_offset_too_small_errors() {
+        // A container large enough for a normal header but not the hidden one.
+        let small = vec![0u8; VOLUME_HEADER_LEN];
+        assert!(matches!(
+            VeraVolume::unlock_hidden_with_password(Cursor::new(small), PASSWORD),
+            Err(VeraError::TooSmall { .. })
+        ));
+    }
+
+    #[test]
+    fn hidden_pim_offset_too_small_errors() {
+        // Big enough for a normal header but not the hidden one at 64 KiB.
+        let small = vec![0u8; VOLUME_HEADER_LEN];
+        assert!(matches!(
+            VeraVolume::unlock_hidden_with_pim(Cursor::new(small), PASSWORD, 1),
+            Err(VeraError::TooSmall { .. })
+        ));
+    }
+
+    #[test]
+    fn too_small_container_errors() {
+        assert!(matches!(
+            VeraVolume::unlock_with_password(Cursor::new(vec![0u8; 100]), PASSWORD),
+            Err(VeraError::TooSmall { got }) if got == 100
+        ));
+    }
+
+    #[test]
+    fn wrong_password_fails() {
+        let (container, _) = build_volume();
+        assert!(matches!(
+            VeraVolume::unlock_with_pim(Cursor::new(container), b"wrong", 1),
+            Err(VeraError::AuthenticationFailed)
+        ));
+    }
+
+    #[test]
+    fn undeclared_size_falls_back_to_container_length() {
+        let (container, plain) = build_volume_with(false);
+        let vol = VeraVolume::unlock_with_pim(Cursor::new(container), PASSWORD, 1).expect("unlock");
+        // encrypted_area_size == 0 ⇒ data_size = total_size - data_offset.
+        assert_eq!(vol.data_size(), plain.len() as u64);
+        assert_eq!(vol.info().encrypted_area_size, 0);
+    }
+
+    #[test]
+    fn read_available_handles_eof_interrupt_and_hard_error() {
+        use std::io;
+
+        // EOF immediately -> break, then zero-fill the whole buffer.
+        struct Eof;
+        impl io::Read for Eof {
+            fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+                Ok(0)
+            }
+        }
+        let mut buf = [0xffu8; 8];
+        assert_eq!(read_available(&mut Eof, &mut buf).unwrap(), 0);
+        assert_eq!(buf, [0u8; 8]);
+
+        // Interrupted once, then one byte, then EOF (covers the Interrupted arm).
+        struct Flaky(u8);
+        impl io::Read for Flaky {
+            fn read(&mut self, b: &mut [u8]) -> io::Result<usize> {
+                self.0 += 1;
+                match self.0 {
+                    1 => Err(io::Error::new(io::ErrorKind::Interrupted, "eintr")),
+                    2 => {
+                        b[0] = 0xAB;
+                        Ok(1)
+                    }
+                    _ => Ok(0),
+                }
+            }
+        }
+        let mut b2 = [0u8; 4];
+        assert_eq!(read_available(&mut Flaky(0), &mut b2).unwrap(), 1);
+        assert_eq!(b2[0], 0xAB);
+
+        // A hard error propagates.
+        struct Boom;
+        impl io::Read for Boom {
+            fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+                Err(io::Error::other("boom"))
+            }
+        }
+        let mut b3 = [0u8; 4];
+        assert!(read_available(&mut Boom, &mut b3).is_err());
+    }
 }

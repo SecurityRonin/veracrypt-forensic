@@ -1,0 +1,3 @@
+# gitleaks configuration — extends the default ruleset.
+[extend]
+useDefault = true
