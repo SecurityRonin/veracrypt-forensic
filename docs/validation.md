@@ -68,8 +68,33 @@ VC_HIDDEN_ORACLE=/tmp/vc-oracle/vc_1-sha512-xts-aes-hidden \
 ```
 
 The same corpus also carries `sha256` / `whirlpool` / `streebog` / `ripemd160`
-PRF variants and `twofish` / `serpent` / `cascades` cipher variants under the same
-published passwords — the ready extension path as ciphers are added.
+PRF variants under the same published passwords.
+
+## Tier-1 — Serpent-256 and cipher cascades vs real VeraCrypt 1.26.20
+
+Serpent-256 and the cipher cascades are validated against volumes **minted by the
+real VeraCrypt 1.26.20 binary** (Idrix's own implementation) with a published
+password (`aaaaaaaaaaaa`) — a third-party author and an independent oracle, so
+genuine Tier-1. Each env-gated test in `core/tests/oracle_veracrypt.rs` unlocks the
+volume and asserts the decrypted-sector SHA-256 digests VeraCrypt itself produced.
+
+| Test / env var | Volume | Cipher chain | LBA 0 SHA-256 |
+|---|---|---|---|
+| `tier1_serpent256_matches_cryptsetup` / `VC_SERPENT_ORACLE` | `vcserp.vc` | `serpent` | `479ad71598de182171230acbe3322cdac3b9bb9f70894a7cc3e7b526be46693b` |
+| `tier1_cascade_aes_twofish_matches_veracrypt` / `VC_CASCADE_ORACLE` | `vccasc.vc` | `aes-twofish` | `da09622b78baeeb1fa8e6532f1eb23afc733a8449097d3a08d612286d4161492` |
+| `tier1_cascade3_aes_twofish_serpent_matches_veracrypt` / `VC_CASCADE3_ORACLE` | `vccasc3.vc` | `aes-twofish-serpent` | `9ae00053bc19932a4b069c522ab0141863c434732a0e50450fb01ffcd2c58142` |
+
+The two-cipher case is additionally cross-checked against **cryptsetup 2.7.0**
+(`--type tcrypt --veracrypt`), so the cascade key layout is confirmed by two
+independent code bases plus this crate. The three-cipher case pins the general
+*n*-cipher offsets and the Serpent-inside-a-cascade path.
+
+```bash
+VC_SERPENT_ORACLE=/tmp/vc-oracle/vcserp.vc \
+VC_CASCADE_ORACLE=/tmp/vc-oracle/vccasc.vc \
+VC_CASCADE3_ORACLE=/tmp/vc-oracle/vccasc3.vc \
+  cargo test -p veracrypt-core --test oracle_veracrypt -- --nocapture
+```
 
 ## Tier-3 — hermetic round-trip and structural unit tests
 
@@ -85,6 +110,10 @@ Under the Tier-1 oracles sit fast, deterministic lib tests:
   header key at PIM 1) and driven through `unlock_with_pim`, `read_at`, the
   `Read`/`Seek` impls, the too-small and wrong-password error paths, and the
   undeclared-size fallback.
+- **Cascade round-trip** — a three-cipher `aes-twofish-serpent` chain is encrypted
+  forward and decrypted through `xts_decrypt_chain`, recovering the plaintext; this
+  independently confirms the reverse apply-order and per-cipher key offsets that the
+  Tier-1 cascade oracles check against real VeraCrypt output.
 
 These prove self-consistency only — a round-trip encoder and decoder can be wrong
 the same way. The real correctness proof is the Tier-1 three-implementation

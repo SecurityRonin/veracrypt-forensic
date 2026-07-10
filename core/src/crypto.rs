@@ -129,6 +129,56 @@ impl Cipher {
     }
 }
 
+/// The cipher chains VeraCrypt supports, in cryptsetup `tcrypt` **array order**
+/// (which fixes the per-cipher key offsets): the three singles, then the cascades.
+#[must_use]
+pub fn cipher_chains() -> Vec<Vec<Cipher>> {
+    use Cipher::{Aes, Serpent, Twofish};
+    vec![
+        vec![Aes],
+        vec![Serpent],
+        vec![Twofish],
+        vec![Twofish, Aes],          // "twofish-aes"
+        vec![Serpent, Twofish, Aes], // "serpent-twofish-aes"
+        vec![Aes, Serpent],          // "aes-serpent"
+        vec![Aes, Twofish, Serpent], // "aes-twofish-serpent"
+        vec![Serpent, Twofish],      // "serpent-twofish"
+    ]
+}
+
+/// The maximum cascade key length in bytes (three 256-bit XTS ciphers).
+pub const MAX_CHAIN_KEY_LEN: usize = 3 * 64;
+
+/// Decrypt `buffer` in place through a cascade of `ciphers` given in cryptsetup
+/// array order, exactly as `TCRYPT_decrypt_hdr`: cipher at array index `j` of an
+/// `n`-cipher cascade uses XTS key `key[32j..32j+32]` (primary) ++
+/// `key[32(n+j)..32(n+j)+32]` (secondary), and the ciphers are applied in **reverse**
+/// array order (`j = n-1 .. 0`). A single-cipher chain reduces to [`xts_decrypt`].
+///
+/// # Errors
+/// [`VeraError::Crypto`] if `ciphers` is empty or `key` is shorter than `64*n`.
+pub fn xts_decrypt_chain(
+    ciphers: &[Cipher],
+    key: &[u8],
+    buffer: &mut [u8],
+    unit_size: usize,
+    base_unit: u128,
+) -> Result<()> {
+    let n = ciphers.len();
+    if n == 0 || key.len() < 64 * n {
+        return Err(VeraError::Crypto {
+            what: "cascade key too short",
+        });
+    }
+    let mut subkey = [0u8; 64];
+    for j in (0..n).rev() {
+        subkey[..32].copy_from_slice(&key[32 * j..32 * j + 32]);
+        subkey[32..].copy_from_slice(&key[32 * (n + j)..32 * (n + j) + 32]);
+        xts_decrypt(ciphers[j], &subkey, buffer, unit_size, base_unit)?;
+    }
+    Ok(())
+}
+
 /// Decrypt `buffer` in place as XTS with `cipher`, split into `unit_size`-byte
 /// data units; data unit `u` uses tweak `base_unit + u` (little-endian).
 ///
@@ -281,6 +331,83 @@ mod tests {
             xts_decrypt(Cipher::Aes, &[0u8; 48], &mut b, 512, 0),
             Err(VeraError::Crypto { .. })
         ));
+    }
+
+    #[test]
+    fn cipher_chains_are_the_eight_veracrypt_chains() {
+        let chains = cipher_chains();
+        assert_eq!(chains.len(), 8);
+        // Three singles, then the five multi-cipher cascades in cryptsetup order.
+        assert_eq!(chains[0], vec![Cipher::Aes]);
+        assert_eq!(chains[3], vec![Cipher::Twofish, Cipher::Aes]);
+        assert_eq!(
+            chains[6],
+            vec![Cipher::Aes, Cipher::Twofish, Cipher::Serpent]
+        );
+        assert!(chains.iter().all(|c| c.len() <= 3));
+    }
+
+    #[test]
+    fn xts_decrypt_chain_rejects_empty_and_short_key() {
+        let mut b = [0u8; 512];
+        // Empty chain.
+        assert!(matches!(
+            xts_decrypt_chain(&[], &[0u8; 64], &mut b, 512, 0),
+            Err(VeraError::Crypto { .. })
+        ));
+        // Two ciphers need 128 bytes; 100 is short.
+        assert!(matches!(
+            xts_decrypt_chain(&[Cipher::Aes, Cipher::Twofish], &[0u8; 100], &mut b, 512, 0),
+            Err(VeraError::Crypto { .. })
+        ));
+    }
+
+    #[test]
+    fn xts_decrypt_chain_roundtrips_a_three_cipher_cascade() {
+        // Prove the cryptsetup key layout + reverse-apply order: encrypt forward
+        // (e[0]..e[n-1]), decrypt via the chain, recover the plaintext. A
+        // three-cipher chain exercises all three cipher arms in one round-trip.
+        let ciphers = [Cipher::Aes, Cipher::Twofish, Cipher::Serpent];
+        let n = ciphers.len();
+        let mut key = [0u8; 192];
+        for (i, b) in key.iter_mut().enumerate() {
+            *b = (i as u8).wrapping_mul(7) ^ 0x5a;
+        }
+        let mut buf = vec![0u8; 512];
+        for (i, b) in buf.iter_mut().enumerate() {
+            *b = (i as u8) ^ 0x91;
+        }
+        let plain = buf.clone();
+        // Encrypt forward: cipher j uses subkey key[32j..]||key[32(n+j)..].
+        for j in 0..n {
+            let mut k1 = [0u8; 32];
+            let mut k2 = [0u8; 32];
+            k1.copy_from_slice(&key[32 * j..32 * j + 32]);
+            k2.copy_from_slice(&key[32 * (n + j)..32 * (n + j) + 32]);
+            match ciphers[j] {
+                Cipher::Aes => encrypt_one(
+                    &Xts128::new(Aes256::new((&k1).into()), Aes256::new((&k2).into())),
+                    &mut buf,
+                    256,
+                ),
+                Cipher::Twofish => encrypt_one(
+                    &Xts128::new(Twofish::new((&k1).into()), Twofish::new((&k2).into())),
+                    &mut buf,
+                    256,
+                ),
+                Cipher::Serpent => encrypt_one(
+                    &Xts128::new(
+                        Serpent::new_from_slice(&k1).unwrap(),
+                        Serpent::new_from_slice(&k2).unwrap(),
+                    ),
+                    &mut buf,
+                    256,
+                ),
+            }
+        }
+        assert_ne!(buf, plain, "cascade must actually encrypt");
+        xts_decrypt_chain(&ciphers, &key, &mut buf, 512, 256).unwrap();
+        assert_eq!(buf, plain, "two-cipher cascade round-trip");
     }
 
     fn encrypt_one<C>(xts: &Xts128<C>, buf: &mut [u8], unit: u128)

@@ -7,8 +7,8 @@ recovered volume facts.
 !!! info "Scope"
     This build brutes the header across **all five VeraCrypt PRFs** (SHA-512,
     SHA-256, Whirlpool, Streebog-512, RIPEMD-160) and decrypts **both single
-    ciphers** (AES-256-XTS, Serpent-256-XTS, Twofish-256-XTS), with a PIM and normal
-    *or* hidden volumes. **Cipher cascades** are the one deferred extension. See
+    ciphers** (AES-256-XTS, Serpent-256-XTS, Twofish-256-XTS) plus **all VeraCrypt
+    cipher cascades** (stacked XTS), with a PIM and normal *or* hidden volumes. See
     [Format Research](RESEARCH.md) and [Validation](validation.md).
 
 ## What it does
@@ -21,8 +21,9 @@ encrypted with a key derived from the password. `veracrypt-core`:
   until the decrypted header shows a valid `VERA`/`TRUE` magic and both CRC-32s
   match — so a wrong password/PRF/cipher is rejected with no false positive,
 - recovers the master key from the decrypted header, and
-- decrypts the data area as AES-256 or Twofish-256 XTS (the tweak is
-  `encrypted_area_start / 512 + LBA`), exposing a plaintext `Read + Seek` view
+- decrypts the data area as AES-256, Serpent-256, or Twofish-256 XTS — or a
+  cascade of them, applied as stacked XTS layers in cryptsetup key order (the tweak
+  is `encrypted_area_start / 512 + LBA`) — exposing a plaintext `Read + Seek` view
   (`read_at`).
 
 `unlock_hidden_with_password` repeats the process against the hidden header at

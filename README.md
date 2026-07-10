@@ -42,7 +42,7 @@ volumes:
 | Axis | Supported |
 |---|---|
 | PRF (header key derivation) | SHA-512 · SHA-256 · Whirlpool · Streebog-512 · RIPEMD-160 |
-| Cipher (data area) | AES-256-XTS · Twofish-256-XTS |
+| Cipher (data area) | AES-256-XTS · Serpent-256-XTS · Twofish-256-XTS · all VeraCrypt cascades |
 | PIM | yes — `unlock_with_pim` / `unlock_hidden_with_pim` |
 | Volume layout | normal (header @ 0) · hidden (header @ 64 KiB) |
 | Flavor | VeraCrypt (`VERA`) · legacy TrueCrypt (`TRUE`) |
@@ -55,9 +55,11 @@ or to prove the presence of, a deniable hidden volume.
 
 All three single ciphers — **AES-256**, **Serpent-256**, **Twofish-256** — are
 supported, each via an audited RustCrypto crate (Serpent through
-`serpent::Serpent::new_from_slice`, which takes the full 256-bit key). **Cipher
-cascades** (AES-Twofish-Serpent and the rest) are the one deferred extension. See
-[`docs/RESEARCH.md`](docs/RESEARCH.md).
+`serpent::Serpent::new_from_slice`, which takes the full 256-bit key), and so are
+**all VeraCrypt cipher cascades** (AES-Twofish, AES-Twofish-Serpent, Serpent-AES,
+Serpent-Twofish-AES, Twofish-Serpent) — stacked XTS layers keyed exactly as
+cryptsetup's `TCRYPT_decrypt_hdr`. `VolumeInfo::cipher_display()` names the chain
+(e.g. `aes-twofish-serpent`). See [`docs/RESEARCH.md`](docs/RESEARCH.md).
 
 ## The two-crate split
 

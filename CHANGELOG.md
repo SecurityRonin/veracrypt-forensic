@@ -6,6 +6,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0]
+
+### Added
+
+- `veracrypt-core`: **cipher cascade** decryption — AES-Twofish, AES-Twofish-Serpent,
+  Serpent-AES, Serpent-Twofish-AES, and Twofish-Serpent, applied as stacked XTS
+  layers with the master-key split and reverse apply-order of cryptsetup's
+  `TCRYPT_decrypt_hdr` (`crypto::xts_decrypt_chain`, `crypto::cipher_chains`). The
+  header brute now tries every PRF × chain, so cascade volumes unlock with no extra
+  caller input. Validated byte-for-byte against real VeraCrypt 1.26.20-minted
+  AES-Twofish and AES-Twofish-Serpent volumes.
+- `VolumeInfo::cipher_display()` renders the cipher chain in VeraCrypt's naming
+  (e.g. `aes-twofish-serpent`).
+
+### Changed
+
+- **Breaking:** `VolumeInfo.cipher: Cipher` is now `VolumeInfo.ciphers: Vec<Cipher>`
+  (a single cipher is a one-element chain). Use `cipher_display()` for a name.
+  `veracrypt-forensic`'s `VC-CIPHER-INVENTORY` finding now reports the full chain.
+
 ## [0.1.1]
 
 ### Added

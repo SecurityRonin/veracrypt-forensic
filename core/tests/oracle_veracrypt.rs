@@ -27,6 +27,56 @@ use veracrypt::VeraVolume;
 const PASSWORD: &[u8] = b"aaaaaaaaaaaa";
 
 #[test]
+fn tier1_cascade3_aes_twofish_serpent_matches_veracrypt() {
+    // Three-cipher cascade (AES-Twofish-Serpent) — confirms the general n-cipher
+    // key offsets and reverse-apply order, and Serpent-256 inside a cascade.
+    let Ok(path) = std::env::var("VC_CASCADE3_ORACLE") else {
+        eprintln!("VC_CASCADE3_ORACLE unset — skipping Tier-1 3-cipher cascade oracle");
+        return;
+    };
+    let file = File::open(&path).expect("open 3-cascade vc image");
+    let mut vol = VeraVolume::unlock_with_password(file, PASSWORD).expect("unlock 3-cascade");
+    assert_eq!(
+        vol.info().ciphers.len(),
+        3,
+        "must brute to a 3-cipher cascade"
+    );
+    let mut buf = [0u8; 512];
+    vol.read_at(0, &mut buf).expect("read_at");
+    let got = sha256_hex(&buf);
+    println!("cascade3 sector 0: {got} ({})", vol.info().cipher_display());
+    assert_eq!(
+        got, "9ae00053bc19932a4b069c522ab0141863c434732a0e50450fb01ffcd2c58142",
+        "3-cascade sector 0 does not match veracrypt"
+    );
+}
+
+#[test]
+fn tier1_cascade_aes_twofish_matches_veracrypt() {
+    // Proves a VeraCrypt cipher CASCADE (AES-Twofish, stacked XTS) decrypts
+    // correctly — key layout + apply order per cryptsetup TCRYPT_decrypt_hdr.
+    let Ok(path) = std::env::var("VC_CASCADE_ORACLE") else {
+        eprintln!("VC_CASCADE_ORACLE unset — skipping Tier-1 cascade oracle");
+        return;
+    };
+    let file = File::open(&path).expect("open cascade vc image");
+    let mut vol = VeraVolume::unlock_with_password(file, PASSWORD).expect("unlock cascade volume");
+    assert_eq!(
+        vol.info().cipher_display(),
+        "aes-twofish",
+        "must brute to the AES-Twofish cascade"
+    );
+    let mut buf = [0u8; 512];
+    vol.read_at(0, &mut buf).expect("read_at");
+    let got = sha256_hex(&buf);
+    println!("cascade sector 0: {got}");
+    assert_eq!(
+        got, "da09622b78baeeb1fa8e6532f1eb23afc733a8449097d3a08d612286d4161492",
+        "cascade sector 0 does not match veracrypt/cryptsetup"
+    );
+}
+
+#[test]
 fn tier1_serpent256_matches_cryptsetup() {
     // Proves 256-bit VeraCrypt Serpent decrypts correctly (via serpent
     // new_from_slice). Same plaintext as the AES oracle → same sector hashes.
@@ -36,7 +86,11 @@ fn tier1_serpent256_matches_cryptsetup() {
     };
     let file = File::open(&path).expect("open serpent vc image");
     let mut vol = VeraVolume::unlock_with_password(file, PASSWORD).expect("unlock serpent volume");
-    assert_eq!(vol.info().cipher.name(), "serpent", "must brute to serpent");
+    assert_eq!(
+        vol.info().cipher_display(),
+        "serpent",
+        "must brute to serpent"
+    );
     // vcserp.vc minted with the real veracrypt binary (Serpent-256, SHA-512),
     // identical plaintext per sector → same hash; ground truth from veracrypt.
     let cases: [(u64, &str); 2] = [
@@ -68,7 +122,7 @@ fn tier1_vc_sha512_xts_aes_matches_cryptsetup() {
     let mut vol = VeraVolume::unlock_with_password(file, PASSWORD).expect("unlock vc volume");
 
     assert_eq!(vol.info().prf.name(), "sha512");
-    assert_eq!(vol.info().cipher.name(), "aes");
+    assert_eq!(vol.info().cipher_display(), "aes");
     assert_eq!(vol.info().encrypted_area_start, 131_072);
 
     // (data-area LBA, expected decrypted-sector SHA-256) — cryptsetup ground truth.

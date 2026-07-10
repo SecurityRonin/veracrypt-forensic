@@ -3,7 +3,7 @@
 
 use std::io::{Read, Seek, SeekFrom};
 
-use crate::crypto::{xts_decrypt, Cipher, Prf};
+use crate::crypto::{cipher_chains, xts_decrypt_chain, Cipher, Prf, MAX_CHAIN_KEY_LEN};
 use crate::error::{Result, VeraError};
 use crate::header::{
     Flavor, VeraHeader, HEADER_LEN, HIDDEN_HEADER_OFFSET, NORMAL_HEADER_OFFSET, SALT_LEN,
@@ -23,14 +23,30 @@ pub struct VolumeInfo {
     pub flavor: Flavor,
     /// The PRF that decrypted the header.
     pub prf: Prf,
-    /// The data cipher.
-    pub cipher: Cipher,
+    /// The cipher chain in cryptsetup array order (one entry for a single cipher,
+    /// more for a cascade). Ciphers are *applied* in reverse of this order.
+    pub ciphers: Vec<Cipher>,
     /// Header format version.
     pub version: u16,
     /// Byte offset where the encrypted data area begins.
     pub encrypted_area_start: u64,
     /// Size of the encrypted data area in bytes.
     pub encrypted_area_size: u64,
+}
+
+impl VolumeInfo {
+    /// The cipher chain as a VeraCrypt display string (`aes`, `aes-twofish`, …),
+    /// i.e. the ciphers in *application* (decrypt) order — the reverse of the
+    /// cryptsetup array order stored in `ciphers`.
+    #[must_use]
+    pub fn cipher_display(&self) -> String {
+        self.ciphers
+            .iter()
+            .rev()
+            .map(|c| c.name())
+            .collect::<Vec<_>>()
+            .join("-")
+    }
 }
 
 impl VeraVolume {
@@ -103,19 +119,21 @@ impl VeraVolume {
         let salt = &hdr[0..SALT_LEN];
         let header_ct = &hdr[SALT_LEN..VOLUME_HEADER_LEN];
 
+        // PBKDF2 is a prefix function, so derive the max cascade key length once
+        // per PRF and slice per chain rather than re-deriving.
         for prf in Prf::all() {
-            let hk = prf.derive(password, salt, prf.iterations_pim(pim), 64);
-            for cipher in Cipher::all() {
+            let hk = prf.derive(password, salt, prf.iterations_pim(pim), MAX_CHAIN_KEY_LEN);
+            for chain in cipher_chains() {
+                let klen = 64 * chain.len();
                 let mut dec = header_ct.to_vec();
-                xts_decrypt(cipher, &hk, &mut dec, HEADER_LEN, 0)?;
+                xts_decrypt_chain(&chain, &hk[..klen], &mut dec, HEADER_LEN, 0)?;
                 let Some(h) = VeraHeader::validate(&dec) else {
                     continue;
                 };
-                let mut master_key = vec![0u8; cipher.key_len()];
-                master_key.copy_from_slice(&h.master_keys[..cipher.key_len()]);
+                let master_key = h.master_keys[..klen].to_vec();
                 return Ok(DecryptedVolume {
                     reader,
-                    cipher,
+                    ciphers: chain.clone(),
                     master_key,
                     data_offset: h.encrypted_area_start,
                     base_unit: u128::from(h.encrypted_area_start / DATA_SECTOR as u64),
@@ -124,7 +142,7 @@ impl VeraVolume {
                     info: VolumeInfo {
                         flavor: h.flavor,
                         prf,
-                        cipher,
+                        ciphers: chain,
                         version: h.version,
                         encrypted_area_start: h.encrypted_area_start,
                         encrypted_area_size: h.encrypted_area_size,
@@ -139,7 +157,7 @@ impl VeraVolume {
 /// A plaintext view of an unlocked VeraCrypt data area.
 pub struct DecryptedVolume<R> {
     reader: R,
-    cipher: Cipher,
+    ciphers: Vec<Cipher>,
     master_key: Vec<u8>,
     data_offset: u64,
     base_unit: u128,
@@ -187,13 +205,13 @@ impl<R: Read + Seek> DecryptedVolume<R> {
             let mut ct = [0u8; DATA_SECTOR];
             self.reader.seek(SeekFrom::Start(physical))?;
             read_available(&mut self.reader, &mut ct)?;
-            xts_decrypt(
-                self.cipher,
+            xts_decrypt_chain(
+                &self.ciphers,
                 &self.master_key,
                 &mut ct,
                 DATA_SECTOR,
                 self.base_unit + u128::from(unit),
-            )?; // cov:unreachable: cipher+64-byte key came from a successful unlock
+            )?; // cov:unreachable: chain+key came from a successful unlock
 
             let take = (DATA_SECTOR - within).min(buf.len() - done);
             buf[done..done + take].copy_from_slice(&ct[within..within + take]);
@@ -340,7 +358,7 @@ mod tests {
             .expect("unlock synthetic volume");
 
         assert_eq!(vol.info().prf.name(), "sha512");
-        assert_eq!(vol.info().cipher.name(), "aes");
+        assert_eq!(vol.info().cipher_display(), "aes");
         assert_eq!(vol.info().flavor, Flavor::VeraCrypt);
         assert_eq!(vol.info().version, 5);
         assert_eq!(vol.info().encrypted_area_start, DATA_START);

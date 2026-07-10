@@ -3,7 +3,7 @@ resolver = "2"
 members = ["core", "forensic"]
 
 [workspace.package]
-version      = "0.1.1"
+version      = "0.2.0"
 edition      = "2021"
 rust-version = "1.81"
 license      = "Apache-2.0"
@@ -25,7 +25,7 @@ hmac     = "0.12"
 pbkdf2   = { version = "0.12", default-features = false, features = ["hmac"] }
 crc32fast = "1"
 forensicnomicon = { version = "1", features = ["std"] }
-veracrypt = { version = "0.1", path = "core", package = "veracrypt-core" }
+veracrypt = { version = "0.2", path = "core", package = "veracrypt-core" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

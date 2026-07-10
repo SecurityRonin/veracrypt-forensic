@@ -83,15 +83,19 @@ data unit `256`, so LBA `k` decrypts with tweak `256 + k`.
 | Cipher | XTS key | Provided by |
 |---|---|---|
 | AES-256 | two 256-bit sub-keys (64 bytes) | `aes` + `xts-mode` (audited RustCrypto) |
+| Serpent-256 | two 256-bit sub-keys (64 bytes) | `serpent` + `xts-mode` (audited RustCrypto) |
 | Twofish-256 | two 256-bit sub-keys (64 bytes) | `twofish` + `xts-mode` (audited RustCrypto) |
 
-## Out of scope in this build
+## Cipher cascades
 
-**Cipher cascades** (AES-Twofish, AES-Twofish-Serpent, Serpent-AES,
-Serpent-Twofish-AES, Twofish-Serpent). All three single ciphers — AES-256,
-Serpent-256, Twofish-256 — are supported via audited RustCrypto crates (Serpent
-through `serpent::Serpent::new_from_slice`, which accepts the full 256-bit key;
-the typed `new()` alone is 16-byte-capped). Cascades change the master-key split
-and add per-cipher chaining, so each is deferred until validated alongside a
-cascade oracle. The header brute and master-key recovery are cipher-agnostic, so
-adding a cascade is a localized change to `Cipher` and its XTS keying.
+VeraCrypt also stacks ciphers into **cascades** — AES-Twofish, AES-Twofish-Serpent,
+Serpent-AES, Serpent-Twofish-AES, Twofish-Serpent. A cascade is applied as nested
+XTS layers, and the master-key split follows cryptsetup's `TCRYPT_decrypt_hdr`
+exactly: for an *n*-cipher cascade given in cryptsetup array order, the cipher at
+array index *j* uses XTS key `key[32j .. 32j+32]` (primary) ‖ `key[32(n+j) ..
+32(n+j)+32]` (secondary) — i.e. all *n* primaries first, then all *n* secondaries —
+and the layers are **applied in reverse array order** (`j = n-1 … 0`). The same
+layout keys both the header brute and the data area, so it is a single code path
+(`crypto::xts_decrypt_chain`). `VolumeInfo::cipher_display()` renders the chain in
+VeraCrypt's own naming (`aes-twofish-serpent`). Validated byte-for-byte against
+real VeraCrypt 1.26.20-minted cascade volumes (see [Validation](validation.md)).

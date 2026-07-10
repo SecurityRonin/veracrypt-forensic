@@ -32,8 +32,8 @@ pub enum AnomalyKind {
     CipherInventory {
         /// PRF name.
         prf: &'static str,
-        /// Cipher name.
-        cipher: &'static str,
+        /// Cipher chain display (e.g. `aes`, `aes-twofish`).
+        cipher: String,
         /// Byte offset of the encrypted data area.
         offset: u64,
     },
@@ -101,7 +101,7 @@ impl AnomalyKind {
                 offset,
             } => vec![
                 evidence("prf", (*prf).to_string()),
-                evidence("cipher", (*cipher).to_string()),
+                evidence("cipher", cipher.clone()),
                 evidence("encrypted_area_start", offset.to_string()),
             ],
         }
@@ -179,7 +179,7 @@ pub fn audit(info: &VolumeInfo, hidden_size: u64) -> Vec<Anomaly> {
 
     out.push(Anomaly::new(AnomalyKind::CipherInventory {
         prf: info.prf.name(),
-        cipher: info.cipher.name(),
+        cipher: info.cipher_display(),
         offset: info.encrypted_area_start,
     }));
 
@@ -214,7 +214,7 @@ mod tests {
         VolumeInfo {
             flavor,
             prf: Prf::Sha512,
-            cipher: Cipher::Serpent,
+            ciphers: vec![Cipher::Serpent],
             version: 5,
             encrypted_area_start: 131_072,
             encrypted_area_size: 36_864,
