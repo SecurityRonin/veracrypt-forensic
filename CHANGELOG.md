@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.1]
+
+### Added
+
+- `veracrypt-forensic`: findings now use the fleet-canonical
+  `forensicnomicon::report` model — the analyzer keeps its typed `AnomalyKind`
+  and emits `forensicnomicon::report::Finding` via `impl Observation`
+  (`audit_findings(info, hidden_size, scope)`); `audit` still returns the typed
+  `Anomaly`s. Codes/severities/categories unchanged.
+
 ## [0.1.0]
 
 ### Added

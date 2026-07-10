@@ -13,6 +13,7 @@ categories   = ["cryptography", "filesystem"]
 
 [dependencies]
 veracrypt = { workspace = true }
+forensicnomicon = { workspace = true }
 
 [lints]
 workspace = true
