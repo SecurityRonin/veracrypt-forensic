@@ -7,7 +7,16 @@
 //! RustCrypto XTS, optional AES/Serpent/Twofish cascade); this module only wires
 //! the contract.
 
-use forensic_vfs::{CredentialSource, CryptoLayer, CryptoScheme, DynSource, VfsError, VfsResult};
+use std::io::{Read, Seek};
+use std::sync::{Arc, Mutex, PoisonError};
+
+use forensic_vfs::adapters::SourceCursor;
+use forensic_vfs::{
+    Credential, CredentialSource, CryptoLayer, CryptoScheme, DynSource, ImageSource, VfsError,
+    VfsResult,
+};
+
+use crate::{DecryptedVolume, VeraError, VeraVolume};
 
 /// A VeraCrypt-encrypted volume presented as a [`CryptoLayer`].
 pub struct VeraCryptLayer {
@@ -28,12 +37,82 @@ impl CryptoLayer for VeraCryptLayer {
         CryptoScheme::VeraCrypt
     }
 
-    fn open(&self, _creds: &dyn CredentialSource) -> VfsResult<DynSource> {
-        // RED: decryption not wired yet.
-        Err(VfsError::NeedCredentials {
-            scheme: "veracrypt",
-            target: String::new(),
-        })
+    fn open(&self, creds: &dyn CredentialSource) -> VfsResult<DynSource> {
+        let cands = creds.credentials_for(CryptoScheme::VeraCrypt, "");
+        if cands.is_empty() {
+            return Err(VfsError::NeedCredentials {
+                scheme: "veracrypt",
+                target: String::new(),
+            });
+        }
+        // VeraCrypt is unlocked by a volume password; try each offered one over a
+        // fresh Read+Seek view of the ciphertext (unlock consumes the reader).
+        let mut last_err = None;
+        for cred in &cands {
+            let Credential::Password(p) = cred else {
+                continue; // only a password protector is wired here
+            };
+            let cursor = SourceCursor::new(Arc::clone(&self.encrypted), 0, self.len);
+            match VeraVolume::unlock_with_password(cursor, p.as_bytes()) {
+                Ok(vol) => return Ok(Arc::new(VeraCryptSource::new(vol))),
+                Err(e) => last_err = Some(e),
+            }
+        }
+        Err(last_err.as_ref().map_or(
+            VfsError::NeedCredentials {
+                scheme: "veracrypt",
+                target: String::new(),
+            },
+            map_vera_err,
+        ))
+    }
+}
+
+/// Translate a veracrypt-core error into the VFS error type (a wrong password /
+/// bad header is a loud [`VfsError::Decode`]).
+fn map_vera_err(e: &VeraError) -> VfsError {
+    VfsError::Decode {
+        layer: "veracrypt",
+        offset: 0,
+        detail: e.to_string(),
+        bytes: forensic_vfs::SmallHex::new(&[]),
+    }
+}
+
+/// A decrypted VeraCrypt volume presented as a read-only [`ImageSource`]. Reads
+/// serialize through a poison-recovering `Mutex` (the reader advances a cursor).
+struct VeraCryptSource<R: Read + Seek> {
+    inner: Mutex<DecryptedVolume<R>>,
+    len: u64,
+}
+
+impl<R: Read + Seek> VeraCryptSource<R> {
+    fn new(vol: DecryptedVolume<R>) -> Self {
+        let len = vol.data_size();
+        Self {
+            inner: Mutex::new(vol),
+            len,
+        }
+    }
+}
+
+impl<R: Read + Seek + Send> ImageSource for VeraCryptSource<R> {
+    fn len(&self) -> u64 {
+        self.len
+    }
+
+    fn read_at(&self, offset: u64, buf: &mut [u8]) -> VfsResult<usize> {
+        let avail = self.len.saturating_sub(offset);
+        if avail == 0 {
+            return Ok(0);
+        }
+        let want = (buf.len() as u64).min(avail) as usize;
+        let Some(dst) = buf.get_mut(..want) else {
+            return Ok(0); // cov:unreachable: want <= buf.len() by the min above
+        };
+        let mut guard = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
+        guard.read_at(offset, dst).map_err(|e| map_vera_err(&e))?;
+        Ok(want)
     }
 }
 
