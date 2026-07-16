@@ -17,15 +17,14 @@ name = "veracrypt"
 [features]
 default = []
 # forensic-vfs CryptoLayer contract (optional): present a decrypted VeraCrypt
-# volume as an ImageSource. Behind the `vfs` feature (ADR 0004). Requires the
-# `CryptoScheme::VeraCrypt` variant — a path dep on the local forensic-vfs until
-# a release ships that variant (the version pin keeps published metadata honest).
-# The decryption is veracrypt-core's own audited RustCrypto; this only wires it.
+# volume as an ImageSource. Behind the `vfs` feature (ADR 0004). Depends on
+# `forensic-vfs 0.2`, which shipped the `CryptoScheme::VeraCrypt` variant. The
+# decryption is veracrypt-core's own audited RustCrypto; this only wires it.
 vfs = ["dep:forensic-vfs"]
 
 [dependencies]
 thiserror = { workspace = true }
-forensic-vfs = { path = "../../forensic-vfs/crates/core", version = "0.1", optional = true }
+forensic-vfs = { version = "0.2", optional = true }
 aes       = { workspace = true }
 serpent   = { workspace = true }
 twofish   = { workspace = true }

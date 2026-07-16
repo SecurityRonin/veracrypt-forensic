@@ -90,7 +90,7 @@ Findings are **observations, never verdicts** — the examiner draws conclusions
   byte-for-byte** — VeraCrypt 1.26.20 (Idrix, the format's own reference),
   `cryptsetup` 2.7.0 (an independent reimplementation), and this crate. See
   [`docs/validation.md`](docs/validation.md).
-- **Panic-free, bounds-checked** parsing of untrusted volumes;
+- **Panic-free by lint, bounds-checked** parsing of untrusted volumes;
   `unwrap`/`expect` denied in production code (`#![forbid(unsafe_code)]`); the
   header parser is fuzzed.
 
