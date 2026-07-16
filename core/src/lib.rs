@@ -32,6 +32,8 @@
 mod crypto;
 mod error;
 mod header;
+#[cfg(feature = "vfs")]
+pub mod vfs;
 mod volume;
 
 pub use crypto::{Cipher, Prf};
