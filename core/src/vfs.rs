@@ -1,4 +1,4 @@
-//! `forensic-vfs` [`CryptoLayer`] adapter for VeraCrypt / TrueCrypt, behind the
+//! `forensic-vfs` [`EncryptionLayer`] adapter for VeraCrypt / TrueCrypt, behind the
 //! `vfs` feature.
 //!
 //! Wraps an encrypted VeraCrypt volume (a parent [`ImageSource`]) and, given a
@@ -12,13 +12,13 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use forensic_vfs::adapters::SourceCursor;
 use forensic_vfs::{
-    Credential, CredentialSource, CryptoLayer, CryptoScheme, DynSource, ImageSource, VfsError,
-    VfsResult,
+    Credential, CredentialSource, DynSource, EncryptionLayer, EncryptionScheme, ImageSource,
+    VfsError, VfsResult,
 };
 
 use crate::{DecryptedVolume, VeraError, VeraVolume};
 
-/// A VeraCrypt-encrypted volume presented as a [`CryptoLayer`].
+/// A VeraCrypt-encrypted volume presented as a [`EncryptionLayer`].
 pub struct VeraCryptLayer {
     encrypted: DynSource,
     len: u64,
@@ -32,13 +32,13 @@ impl VeraCryptLayer {
     }
 }
 
-impl CryptoLayer for VeraCryptLayer {
-    fn scheme(&self) -> CryptoScheme {
-        CryptoScheme::VeraCrypt
+impl EncryptionLayer for VeraCryptLayer {
+    fn scheme(&self) -> EncryptionScheme {
+        EncryptionScheme::VeraCrypt
     }
 
     fn open(&self, creds: &dyn CredentialSource) -> VfsResult<DynSource> {
-        let cands = creds.credentials_for(CryptoScheme::VeraCrypt, "");
+        let cands = creds.credentials_for(EncryptionScheme::VeraCrypt, "");
         if cands.is_empty() {
             return Err(VfsError::NeedCredentials {
                 scheme: "veracrypt",
@@ -121,13 +121,15 @@ impl<R: Read + Seek + Send> ImageSource for VeraCryptSource<R> {
 mod tests {
     use super::VeraCryptLayer;
     use forensic_vfs::adapters::FileSource;
-    use forensic_vfs::{Credential, CredentialSource, CryptoLayer, CryptoScheme, DynSource};
+    use forensic_vfs::{
+        Credential, CredentialSource, DynSource, EncryptionLayer, EncryptionScheme,
+    };
     use sha2::{Digest, Sha256};
     use std::sync::Arc;
 
     struct FixedCreds(Vec<Credential>);
     impl CredentialSource for FixedCreds {
-        fn credentials_for(&self, _scheme: CryptoScheme, _target: &str) -> Vec<Credential> {
+        fn credentials_for(&self, _scheme: EncryptionScheme, _target: &str) -> Vec<Credential> {
             self.0.clone()
         }
     }
@@ -152,13 +154,13 @@ mod tests {
     }
 
     #[test]
-    fn veracrypt_cryptolayer_decrypts_cascade() {
+    fn veracrypt_encryptionlayer_decrypts_cascade() {
         let Some(enc) = encrypted() else {
             eprintln!("skip: no VeraCrypt image (set VC_CASCADE_ORACLE)");
             return;
         };
         let layer = VeraCryptLayer::new(enc);
-        assert_eq!(layer.scheme(), CryptoScheme::VeraCrypt);
+        assert_eq!(layer.scheme(), EncryptionScheme::VeraCrypt);
 
         let creds = FixedCreds(vec![Credential::Password("aaaaaaaaaaaa".to_string())]);
         let dec: DynSource = layer.open(&creds).expect("unlock vccasc.vc");
