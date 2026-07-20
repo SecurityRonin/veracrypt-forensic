@@ -1,0 +1,155 @@
+
+# cargo-vet config file
+
+[cargo-vet]
+version = "0.10"
+
+[imports.bytecode-alliance]
+url = "https://raw.githubusercontent.com/bytecodealliance/wasmtime/main/supply-chain/audits.toml"
+
+[imports.embark]
+url = "https://raw.githubusercontent.com/EmbarkStudios/rust-ecosystem/main/audits.toml"
+
+[imports.google]
+url = "https://raw.githubusercontent.com/google/rust-crate-audits/main/audits.toml"
+
+[imports.mozilla]
+url = "https://raw.githubusercontent.com/mozilla/supply-chain/main/audits.toml"
+
+[policy.veracrypt-core]
+audit-as-crates-io = false
+
+[policy.veracrypt-forensic]
+audit-as-crates-io = false
+
+[[exemptions.aes]]
+version = "0.8.4"
+criteria = "safe-to-deploy"
+
+[[exemptions.block-buffer]]
+version = "0.10.4"
+criteria = "safe-to-deploy"
+
+[[exemptions.cfg-if]]
+version = "1.0.4"
+criteria = "safe-to-deploy"
+
+[[exemptions.cpufeatures]]
+version = "0.2.17"
+criteria = "safe-to-deploy"
+
+[[exemptions.crc32fast]]
+version = "1.5.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.crypto-common]]
+version = "0.1.7"
+criteria = "safe-to-deploy"
+
+[[exemptions.digest]]
+version = "0.10.7"
+criteria = "safe-to-deploy"
+
+[[exemptions.forensic-vfs]]
+version = "0.7.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.forensicnomicon]]
+version = "1.8.1"
+criteria = "safe-to-deploy"
+
+[[exemptions.forensicnomicon-core]]
+version = "1.4.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.forensicnomicon-data]]
+version = "1.3.2"
+criteria = "safe-to-deploy"
+
+[[exemptions.generic-array]]
+version = "0.14.7"
+criteria = "safe-to-deploy"
+
+[[exemptions.hmac]]
+version = "0.12.1"
+criteria = "safe-to-deploy"
+
+[[exemptions.inout]]
+version = "0.1.4"
+criteria = "safe-to-deploy"
+
+[[exemptions.libc]]
+version = "0.2.186"
+criteria = "safe-to-deploy"
+
+[[exemptions.pbkdf2]]
+version = "0.12.2"
+criteria = "safe-to-deploy"
+
+[[exemptions.proc-macro2]]
+version = "1.0.107"
+criteria = "safe-to-deploy"
+
+[[exemptions.quote]]
+version = "1.0.47"
+criteria = "safe-to-deploy"
+
+[[exemptions.ripemd]]
+version = "0.1.3"
+criteria = "safe-to-deploy"
+
+[[exemptions.serpent]]
+version = "0.5.1"
+criteria = "safe-to-deploy"
+
+[[exemptions.sha2]]
+version = "0.10.9"
+criteria = "safe-to-deploy"
+
+[[exemptions.state-history-forensic]]
+version = "0.1.0"
+criteria = "safe-to-deploy"
+
+[[exemptions.streebog]]
+version = "0.10.2"
+criteria = "safe-to-deploy"
+
+[[exemptions.subtle]]
+version = "2.6.1"
+criteria = "safe-to-deploy"
+
+[[exemptions.syn]]
+version = "3.0.2"
+criteria = "safe-to-deploy"
+
+[[exemptions.thiserror]]
+version = "2.0.19"
+criteria = "safe-to-deploy"
+
+[[exemptions.thiserror-impl]]
+version = "2.0.19"
+criteria = "safe-to-deploy"
+
+[[exemptions.twofish]]
+version = "0.7.1"
+criteria = "safe-to-deploy"
+
+[[exemptions.typenum]]
+version = "1.20.1"
+criteria = "safe-to-deploy"
+
+[[exemptions.unicode-ident]]
+version = "1.0.24"
+criteria = "safe-to-deploy"
+
+[[exemptions.version_check]]
+version = "0.9.5"
+criteria = "safe-to-deploy"
+
+[[exemptions.whirlpool]]
+version = "0.10.4"
+criteria = "safe-to-deploy"
+
+[[exemptions.xts-mode]]
+version = "0.5.1"
+criteria = "safe-to-deploy"
