@@ -13,6 +13,7 @@
 # Per-package git tags, e.g. `veracrypt-core-v0.2.2`, `veracrypt-forensic-v0.2.2`.
 # A `<name>-v…` tag has a letter, not a digit, after the first `v`, so it never
 # matches a `v[0-9]*` binary-release glob.
+git_tag_name = "{{ package }}-v{{ version }}"
 git_tag_enable = true
 # Library crates get a git tag + CHANGELOG entry, not a GitHub Release with assets.
 git_release_enable = false
