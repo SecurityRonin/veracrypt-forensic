@@ -213,9 +213,9 @@ dependencies = [
 
 [[package]]
 name = "state-history-forensic"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06d95f05c0dd49a5dfae0eb6cb6fae7bb3bd5c1f787300c94a3a5adecb44d98f"
+checksum = "41b218f92b938038c4a8c7e38389e9751711d8cd9099991061e52bc274c398b6"
 
 [[package]]
 name = "streebog"
