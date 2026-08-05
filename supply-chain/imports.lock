@@ -1,6 +1,13 @@
 
 # cargo-vet imports lock
 
+[[publisher.state-history-forensic]]
+version = "0.1.1"
+when = "2026-08-05"
+user-id = 347968
+user-login = "h4x0r"
+user-name = "Albert Hui"
+
 [[audits.bytecode-alliance.audits.cipher]]
 who = "Andrew Brown <andrew.brown@intel.com>"
 criteria = "safe-to-deploy"

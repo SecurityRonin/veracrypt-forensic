@@ -106,10 +106,6 @@ criteria = "safe-to-deploy"
 version = "0.10.9"
 criteria = "safe-to-deploy"
 
-[[exemptions.state-history-forensic]]
-version = "0.1.0"
-criteria = "safe-to-deploy"
-
 [[exemptions.streebog]]
 version = "0.10.2"
 criteria = "safe-to-deploy"
