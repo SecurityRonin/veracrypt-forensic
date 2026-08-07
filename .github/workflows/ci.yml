@@ -19,3 +19,17 @@ jobs:
   # a behaviour change smuggled in by an adoption PR, so there is nothing here.
   ci:
     uses: SecurityRonin/fleet-ci/.github/workflows/rust-ci.yml@a62ab10603151071744cec0b4e3638aa6406d4e4
+    with:
+      # CARRIED ACROSS. The replaced gate ran `cargo llvm-cov --workspace --lcov`
+      # with NO --all-features. The shared default turns it on, compiling
+      # feature-gated code this repo has never measured: line coverage falls
+      # 100% -> 89.70% on identical source, and the strict gate then fails.
+      #
+      # Keeping the scope as it was preserves exactly what CI accepts. Widening
+      # the scope AND lowering to a ~89 floor would change both halves at once
+      # inside a PR whose job is to change nothing.
+      #
+      # The blind spot is real and stated rather than implied: feature-gated code
+      # stays unmeasured here, as before. Closing it means testing that code and
+      # then setting this true — a separate change with its own argument.
+      all-features: false
