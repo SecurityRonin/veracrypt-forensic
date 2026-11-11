@@ -85,9 +85,9 @@ dependencies = [
 
 [[package]]
 name = "forensic-vfs"
-version = "0.7.1"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5c699c86fda2220f4e4bf00a6948eb4fe58b50343dbfadedba14dd417f22dfd"
+checksum = "b5d81d96670e5a2852067344fbee8da2b1e7f21ede8c06a8b997db8c2e423e66"
 dependencies = [
  "forensicnomicon-core",
  "state-history-forensic",
@@ -213,9 +213,12 @@ dependencies = [
 
 [[package]]
 name = "state-history-forensic"
-version = "0.1.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41b218f92b938038c4a8c7e38389e9751711d8cd9099991061e52bc274c398b6"
+checksum = "3d4644e19f8beba3fe9d74c6a3b985e242d0c1b5920ecf4a24f6c4b1451a05af"
+dependencies = [
+ "forensicnomicon-core",
+]
 
 [[package]]
 name = "streebog"

@@ -27,6 +27,9 @@ dependencies_update = false
 release_commits = "^(feat|fix|perf|refactor|doc|revert)"
 
 [changelog]
+# A breaking change must reach the changelog whatever its type: the parsers
+# below skip `build:`/`chore:`, and a breaking dependency move is often one.
+protect_breaking_commits = true
 commit_parsers = [
     { message = "^chore\\(release\\):", skip = true },
     { message = "^chore: release", skip = true },
