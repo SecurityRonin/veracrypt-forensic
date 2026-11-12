@@ -1,5 +1,8 @@
 //! # veracrypt-forensic — VeraCrypt/TrueCrypt volume anomaly auditor
 //!
+//! Public items here take or return `veracrypt` types (`VolumeInfo` in `audit`/`audit_findings`), so `veracrypt-core` is a
+//! public dependency: an incompatible `veracrypt-core` changes this crate's API as well.
+//!
 //! Emits severity-graded [`forensicnomicon::report::Finding`]s over an unlocked
 //! volume's recovered facts: flavor (VeraCrypt vs legacy TrueCrypt), the
 //! PRF/cipher in use, and whether the header advertises a hidden volume. Findings
