@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0](https://github.com/SecurityRonin/veracrypt-forensic/compare/veracrypt-core-v0.2.4...veracrypt-core-v0.3.0) - 2026-11-12
+
+### Fixed
+
+- *(vfs)* [**breaking**] implement forensic-vfs 0.10, the trait the engine links against
+
 ## [0.2.4](https://github.com/SecurityRonin/veracrypt-forensic/compare/veracrypt-core-v0.2.3...veracrypt-core-v0.2.4) - 2026-07-20
 
 ### Fixed

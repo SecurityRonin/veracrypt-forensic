@@ -289,7 +289,7 @@ checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
 
 [[package]]
 name = "veracrypt-core"
-version = "0.2.4"
+version = "0.3.0"
 dependencies = [
  "aes",
  "crc32fast",
@@ -308,7 +308,7 @@ dependencies = [
 
 [[package]]
 name = "veracrypt-forensic"
-version = "0.2.4"
+version = "0.3.0"
 dependencies = [
  "forensicnomicon",
  "veracrypt-core",
